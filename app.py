@@ -116,10 +116,17 @@ st.markdown("""
         border-color: #eaeaea !important;
     }
 
-    /* 隐藏 Streamlit 默认元素 */
+    /* 隐藏 Streamlit 默认元素 (保留 Header 以显示侧边栏按钮) */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    
+    /* 仅让 header 背景透明，不隐藏内容，否则侧边栏收起后无法展开 */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+    }
+    
+    /* 如果想隐藏右上角的汉堡菜单，可以使用这个 (可选) */
+    /* .stApp > header > div:first-child { visibility: hidden; } */
     
     /* 布局微调 */
     .block-container {
