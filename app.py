@@ -9,11 +9,135 @@ from email.utils import formataddr
 from datetime import datetime
 from io import BytesIO
 import config
+import re
 
-# --- 设置页面配置 ---
-st.set_page_config(page_title="Smart Mail Drop", page_icon="📨", layout="wide")
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Mail Drop",
+    page_icon="✉️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- 辅助函数 ---
+# --- Swiss Design System (CSS) ---
+st.markdown("""
+<style>
+    /* Font Import - Inter */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+    /* Global Reset & Typography */
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        color: #1a1a1a;
+        font-weight: 400;
+    }
+    
+    /* Backgrounds */
+    .stApp {
+        background-color: #ffffff;
+    }
+    
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa;
+        border-right: 1px solid #eaeaea;
+    }
+
+    /* Headings */
+    h1, h2, h3 {
+        font-weight: 600 !important;
+        letter-spacing: -0.02em !important;
+        color: #000000 !important;
+    }
+    h1 { font-size: 2.2rem !important; margin-bottom: 1.5rem !important; }
+    h2 { font-size: 1.2rem !important; margin-top: 2rem !important; margin-bottom: 1rem !important; }
+    h3 { font-size: 1.0rem !important; font-weight: 500 !important; opacity: 0.8; }
+
+    /* Inputs & Textareas */
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {
+        background-color: #ffffff !important;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 6px !important;
+        color: #1a1a1a !important;
+        padding: 0.8rem !important;
+        font-size: 0.95rem !important;
+        transition: border-color 0.2s ease;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
+        border-color: #000000 !important;
+        box-shadow: none !important;
+    }
+
+    /* File Uploader */
+    [data-testid="stFileUploader"] {
+        border: 1px dashed #e0e0e0;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        background-color: #fafafa;
+        transition: background-color 0.2s;
+    }
+    [data-testid="stFileUploader"]:hover {
+        background-color: #f0f0f0;
+    }
+
+    /* Buttons */
+    .stButton button {
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        padding: 0.6rem 1.2rem !important;
+        border: none !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    /* Primary Action (Send) */
+    button[kind="primary"] {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+    }
+    button[kind="primary"]:hover {
+        background-color: #333333 !important;
+        transform: translateY(-1px);
+    }
+    
+    /* Secondary Action (Save/Download) */
+    button[kind="secondary"] {
+        background-color: #f0f0f0 !important;
+        color: #000000 !important;
+        border: 1px solid #e0e0e0 !important;
+    }
+    button[kind="secondary"]:hover {
+        border-color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+
+    /* Dividers */
+    hr {
+        margin: 2rem 0 !important;
+        border-color: #eaeaea !important;
+    }
+
+    /* Metrics & Cards */
+    .css-1r6slb0 {
+        border: 1px solid #eaeaea;
+        padding: 1.5rem;
+        border-radius: 8px;
+    }
+    
+    /* Hide Default Streamlit Elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Custom Padding Fixes */
+    .block-container {
+        padding-top: 3rem !important;
+        padding-bottom: 5rem !important;
+        max-width: 1200px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Helper Functions ---
 def smart_str(val):
     if pd.isna(val): return ""
     if isinstance(val, float):
@@ -21,7 +145,6 @@ def smart_str(val):
     return str(val).strip()
 
 def send_one_email(row, template_content, placeholders, subject, s_name, s_email):
-    """发送逻辑核心 - 接收动态账号参数"""
     try:
         msg_body = template_content
         for key in placeholders:
@@ -33,110 +156,121 @@ def send_one_email(row, template_content, placeholders, subject, s_name, s_email
         
         recipient = row.get('邮箱') or row.get('Email') or row.get('email')
         if not recipient or pd.isna(recipient):
-            return False, "无有效邮箱地址", None
+            return False, "Missing email address", None
             
         msg['To'] = str(recipient).strip()
         msg['Subject'] = subject
         msg.attach(MIMEText(msg_body, 'plain', 'utf-8'))
         
-        return True, "准备发送", msg
+        return True, "Ready", msg
     except Exception as e:
         return False, str(e), None
 
-# --- 侧边栏 ---
+# --- Sidebar ---
 with st.sidebar:
-    st.title("⚙️ 发送配置")
+    st.markdown("### Configuration")
     
-    # 动态配置区
-    with st.expander("👤 账号设置", expanded=True):
-        sender_name = st.text_input("发件人名称", value=config.SENDER_NAME)
-        sender_email = st.text_input("发件人邮箱", value=config.SENDER_EMAIL)
-        sender_password = st.text_input("应用专用密码", value=config.APP_PASSWORD, type="password", help="请使用Google两步验证生成的16位应用专用密码")
+    # Credentials
+    st.markdown("#### Credentials")
+    sender_name = st.text_input("Sender Name", value=config.SENDER_NAME, placeholder="e.g. John Doe")
+    sender_email = st.text_input("Sender Email", value=config.SENDER_EMAIL, placeholder="name@company.com")
+    sender_password = st.text_input("App Password", value=config.APP_PASSWORD, type="password")
     
-    # 默认值保护
+    st.markdown("---")
+    
+    # Settings
+    st.markdown("#### Delivery Settings")
     default_limit = getattr(config, 'BATCH_LIMIT', 0)
-    batch_limit = st.number_input("单次发送数量 (0=无限)", min_value=0, value=default_limit)
+    batch_limit = st.number_input("Batch Limit (0 for infinite)", min_value=0, value=default_limit)
     
-    st.divider()
-    st.write("🤖 **人类模拟设置**")
-    sleep_min = st.slider("最小间隔 (秒)", 1.0, 10.0, 2.0)
-    sleep_max = st.slider("最大间隔 (秒)", sleep_min, 20.0, 5.0)
+    st.markdown("#### Humanization")
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        sleep_min = st.number_input("Min Delay (s)", 1.0, 60.0, 2.0)
+    with col_s2:
+        sleep_max = st.number_input("Max Delay (s)", sleep_min, 60.0, 5.0)
 
-# --- 主界面 ---
-st.title("📨 Smart Mail Drop")
+# --- Main Interface ---
+st.title("Mail Drop")
+st.markdown("<p style='font-size: 1.1rem; color: #666; margin-bottom: 2rem;'>Secure bulk email dispatch system.</p>", unsafe_allow_html=True)
 
-# 1. 数据加载区 (支持上传)
-col1, col2 = st.columns([1, 1])
+col1, col_spacer, col2 = st.columns([1, 0.1, 1])
 
 with col1:
-    st.subheader("1. 导入名单")
-    uploaded_file = st.file_uploader("上传 Excel 文件", type=["xlsx"])
+    st.markdown("## 01. Audience")
+    uploaded_file = st.file_uploader("Drop your Excel recipient list here", type=["xlsx"])
     
+    df = None
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file)
             if df.empty:
-                st.warning("⚠️ 文件是空的")
+                st.toast("File is empty", icon="⚠️")
             else:
-                st.success(f"✅ 已加载 (共 {len(df)} 人)")
-                st.dataframe(df.head(5), height=200)
+                st.dataframe(df.head(5), height=200, use_container_width=True)
+                st.markdown(f"<p style='font-size: 0.9rem; color: #666; margin-top: 0.5rem;'>✓ Loaded {len(df)} recipients</p>", unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"❌ 读取失败: {e}")
-            df = None
-    else:
-        st.info("👋 请先上传包含收件人的 Excel 文件")
-        df = None
+            st.error(f"Error reading file: {e}")
 
-# 2. 模板编辑区
 with col2:
-    st.subheader("2. 邮件内容")
-    try:
-        with open("template.txt", "r") as f:
-            default_template = f.read()
-    except:
-        default_template = "你好 {UID}..."
-        
-    default_subject = getattr(config, 'EMAIL_SUBJECT', "通知")
-    email_subject = st.text_input("邮件标题", value=default_subject)
-    template_content = st.text_area("正文模板", value=default_template, height=200)
+    st.markdown("## 02. Content")
     
-    if st.button("💾 保存模板变更"):
+    # Template Loader
+    try:
+        with open("template.txt", "r") as f: default_template = f.read()
+    except:
+        default_template = "Hello {Name},\n\n..."
+
+    default_subject = getattr(config, 'EMAIL_SUBJECT', "Update")
+    email_subject = st.text_input("Subject Line", value=default_subject)
+    template_content = st.text_area("Message Body", value=default_template, height=250)
+    
+    if st.button("Save Template", type="secondary"):
         with open("template.txt", "w") as f:
             f.write(template_content)
-        st.toast("模板已保存!", icon="✅")
+        st.toast("Template saved successfully")
 
-# 3. 预览与操作
+# --- Action Area ---
 if df is not None and not df.empty:
-    st.divider()
+    st.markdown("---")
+    st.markdown("## 03. Review & Dispatch")
     
-    # 提取变量
-    import re
+    # Variable Extraction
     placeholders = set(re.findall(r'\{(.*?)\}', template_content))
     missing_cols = [p for p in placeholders if p not in df.columns]
     
     if missing_cols:
-        st.error(f"❌ Excel 缺少列: {missing_cols}")
+        st.error(f"Missing columns in Excel: {', '.join(missing_cols)}")
     else:
-        # 预览
-        with st.expander("👁️ 预览第一封邮件"):
+        # Preview Card
+        with st.container():
+            st.markdown("#### Preview")
             preview_row = df.iloc[0]
             preview_body = template_content
             for key in placeholders:
                 preview_body = preview_body.replace(f"{{{key}}}", smart_str(preview_row.get(key)))
-            st.markdown(f"**From**: `{sender_name} <{sender_email}>`")
-            st.markdown(f"**To**: `{preview_row.get('邮箱')}`")
-            st.markdown(f"**Subject**: `{email_subject}`")
-            st.text(preview_body)
+            
+            preview_html = f"""
+            <div style="background-color: #fafafa; border: 1px solid #eaeaea; padding: 1.5rem; border-radius: 8px; font-family: 'Inter', sans-serif;">
+                <div style="margin-bottom: 0.5rem; font-size: 0.9rem; color: #666;">
+                    <strong>To:</strong> {preview_row.get('邮箱') or preview_row.get('Email')}<br>
+                    <strong>Subject:</strong> {email_subject}
+                </div>
+                <hr style="margin: 1rem 0; border-color: #eaeaea;">
+                <div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.5;">{preview_body}</div>
+            </div>
+            """
+            st.markdown(preview_html, unsafe_allow_html=True)
 
-        # 启动按钮
-        st.write("") # Spacer
-        if st.button("🚀 开始发送", type="primary", use_container_width=True):
-            # 校验
+        st.markdown("<div style='height: 2rem;'></div>", unsafe_allow_html=True)
+        
+        # Send Button
+        if st.button("Initialize Dispatch Sequence", type="primary", use_container_width=True):
             if not sender_email or not sender_password:
-                st.error("❌ 请先在左侧侧边栏填入发件人邮箱和密码！")
+                st.error("Please configure sender credentials in the sidebar.")
                 st.stop()
                 
-            # 确定发送列表
+            # Batch Logic
             if batch_limit > 0 and len(df) > batch_limit:
                 task_df = df.iloc[:batch_limit].copy()
                 remaining_df = df.iloc[batch_limit:].copy()
@@ -144,70 +278,60 @@ if df is not None and not df.empty:
                 task_df = df.copy()
                 remaining_df = pd.DataFrame()
                 
+            # Progress UI
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
             processed_records = []
             
-            # 连接服务器
+            # SMTP Connection
             try:
-                with st.spinner(f"正在以 {sender_email} 连接服务器..."):
+                with st.spinner(f"Authenticating as {sender_email}..."):
                     if config.SMTP_PORT == 465:
                         server = smtplib.SMTP_SSL(config.SMTP_SERVER, config.SMTP_PORT)
                     else:
                         server = smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT)
                         server.starttls()
-                    
                     server.login(sender_email, sender_password)
             except Exception as e:
-                st.error(f"无法连接服务器: {e}")
+                st.error(f"Connection Failed: {e}")
                 st.stop()
                 
-            # 循环发送
+            # Sending Loop
             total = len(task_df)
             success_count = 0
             
             for i, (index, row) in enumerate(task_df.iterrows()):
-                name = row.get('账号', row.get('姓名', 'Unknown'))
-                status_text.markdown(f"📨 正在发送 ({i+1}/{total}): **{name}**")
+                name = row.get('账号', row.get('姓名', 'Recipient'))
+                status_text.markdown(f"<span style='color: #666; font-size: 0.9rem;'>Dispatching {i+1}/{total}: <strong>{name}</strong></span>", unsafe_allow_html=True)
                 
-                # 构造并发送
                 is_ready, msg_str, msg_obj = send_one_email(row, template_content, placeholders, email_subject, sender_name, sender_email)
                 
                 if is_ready:
                     try:
                         server.sendmail(sender_email, msg_obj['To'], msg_obj.as_string())
-                        status = "成功"
-                        detail = "OK"
+                        status, detail = "Success", "OK"
                         success_count += 1
                     except Exception as e:
-                        status = "失败"
-                        detail = str(e)
+                        status, detail = "Failed", str(e)
                 else:
-                    status = "失败"
-                    detail = msg_str
+                    status, detail = "Failed", msg_str
                     
-                # 记录
                 record = row.to_dict()
-                record['发送状态'] = status
-                record['详情'] = detail
-                record['发送时间'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                record.update({'Status': status, 'Details': detail, 'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
                 processed_records.append(record)
                 
-                # 进度条
                 progress_bar.progress((i + 1) / total)
                 
-                # 延时
                 if i < total - 1:
                     import random
-                    sleep_time = random.uniform(sleep_min, sleep_max)
-                    time.sleep(sleep_time)
+                    time.sleep(random.uniform(sleep_min, sleep_max))
             
             server.quit()
+            status_text.empty()
             
-            # 结果处理
+            # Post-Process
             if processed_records:
-                # 1. 归档日志
+                # History File
                 history_file = "sent_history.xlsx"
                 new_recs = pd.DataFrame(processed_records)
                 try:
@@ -215,26 +339,33 @@ if df is not None and not df.empty:
                         pd.concat([pd.read_excel(history_file), new_recs]).to_excel(history_file, index=False)
                     else:
                         new_recs.to_excel(history_file, index=False)
-                except Exception as e:
-                    st.error(f"服务器日志归档失败: {e}")
-                    
-                st.success(f"🎉 任务完成! 成功: {success_count}, 失败: {total-success_count}")
-                st.balloons()
+                except: pass
                 
-                # 2. 生成下载按钮 (核心变更)
-                if not remaining_df.empty:
-                    st.warning(f"👉 还有 {len(remaining_df)} 人未发送。")
-                    
-                    output = BytesIO()
-                    # 显式保留表头
-                    remaining_df.to_excel(output, index=False, header=True)
-                    data = output.getvalue()
-                    
+                # Success UI
+                st.success(f"Operation Complete. {success_count} sent, {total-success_count} failed.")
+                
+                # Download Report
+                output_log = BytesIO()
+                new_recs.to_excel(output_log, index=False)
+                
+                col_d1, col_d2 = st.columns([1, 1])
+                with col_d1:
                     st.download_button(
-                        label="📥 点击下载剩余名单.xlsx",
-                        data=data,
-                        file_name=f"剩余名单_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        label="Download Report",
+                        data=output_log.getvalue(),
+                        file_name=f"Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
                     )
-                else:
-                    st.success("✨ 所有名单已全部处理完毕！")
+                
+                if not remaining_df.empty:
+                    with col_d2:
+                        rem_out = BytesIO()
+                        remaining_df.to_excel(rem_out, index=False)
+                        st.download_button(
+                            label=f"Download Remaining ({len(remaining_df)})",
+                            data=rem_out.getvalue(),
+                            file_name=f"Remaining_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
